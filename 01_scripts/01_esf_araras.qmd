@@ -1,0 +1,289 @@
+---
+title: "ESF - Araras"
+author: "Daniel Pagotto"
+format: html
+editor: visual
+---
+
+## ESF - Araras
+
+Carregando bibliotecas que serão úteis.
+
+```{r}
+#| warning: false
+
+library(RODBC)
+library(tidyverse)
+library(readxl)
+library(geobr)
+library(gganimate)
+library(sf)
+library(ggrepel)
+```
+
+## Baixando dados
+
+O script abaixo serve para baixar os dados.
+
+```{r}
+
+dremio_host <- Sys.getenv("endereco")
+dremio_port <- Sys.getenv("port")
+dremio_uid <- Sys.getenv("uid")
+dremio_pwd <- Sys.getenv("datalake")
+
+
+channel <- odbcDriverConnect(
+                    sprintf("DRIVER=Dremio Connector;
+                             HOST=%s;
+                             PORT=%s;
+                             UID=%s;
+                             PWD=%s;
+                                     AUTHENTICATIONTYPE=Basic Authentication;
+                                     CONNECTIONTYPE=Direct", 
+                         dremio_host, 
+                         dremio_port, 
+                         dremio_uid, 
+                         dremio_pwd))
+
+query <- 'SELECT * FROM "@daniel"."migracoes_norte"."Médicos que atuaram na UBS ANTONIO BENTO MIGUES"'
+
+
+df <- sqlQuery(channel, 
+                     query, 
+                     as.is = TRUE)
+```
+
+### 1. Médicos
+
+Primeiro vamos analisar os fluxos dos profissionais enquanto atuaram na ESF Araras.
+
+```{r}
+
+df$COMPETEN <- as.Date(paste0(df$COMPETEN, "01"), 
+                       format = "%Y%m%d")
+
+df_ubs <- 
+  df |> 
+  filter(CNES == '3748774')
+
+```
+
+Vamos visualizar agora os médicos que atuaram na unidade.
+
+```{r}
+
+df_ubs |> 
+  ggplot(aes(x = COMPETEN, 
+             y = NOMEPROF)) + 
+  geom_line() + theme_minimal() + 
+  xlab("Períodos") + 
+  ylab("Nomes") +
+  ggtitle("Médicos em unidades ESF Araras")
+
+```
+
+Observa-se que apenas um profissional esteve por um longo período. Os demais ficaram períodos próximos a 3 anos.
+
+```{r}
+
+df_ubs |> 
+  group_by(NOMEPROF) |> 
+  count() |> 
+  mutate(anos = n/12)
+
+```
+
+### 1.1. Erivaldo Albuquerque Fialho Junior
+
+Verificando a trajetória do profissional.
+
+```{r}
+
+a <- df |> 
+  filter(NOMEPROF == 'ERIVALDO ALBUQUERQUE FIALHO JUNIOR') |> 
+  ggplot(aes(x = COMPETEN, 
+             y = FANTASIA, 
+             col = nivel_atencao)) +
+  geom_line() +
+  theme_minimal() +
+  xlab("Mês/Ano") +
+  facet_wrap(~municipio_pad, 
+             nrow = 4) +
+  scale_x_date(date_breaks = "1 year", 
+               date_labels = "%Y") +
+  labs(color = "Nível de Atenção") +
+  theme(
+    axis.text.y = element_text(size = 8),
+    axis.text.x = element_text(angle = 45, 
+                               hjust = 1),
+    panel.spacing = unit(1, "lines")
+  )
+
+
+ggsave(filename = "02_figuras/erivaldo.png",
+       a, dpi = 300, width = 10, height = 8)
+
+
+```
+
+![](02_figuras/erivaldo.png){fig-align="center"}
+
+A tabela abaixo permite verificar quanto tempo em média o profissional permanece cada localidade.
+
+```{r}
+
+df |> 
+  group_by(uf_sigla, municipio_pad, FANTASIA) |> 
+  count() |> 
+  mutate(anos = n/12) |> 
+  rename(meses = n) |> 
+  arrange(desc(meses))
+
+```
+
+asdfasdf asdf asdf asdf
+
+```{r}
+
+df_erivaldo_ano <- 
+  df |> 
+  filter(NOMEPROF == 'ERIVALDO ALBUQUERQUE FIALHO JUNIOR') |> 
+  mutate(ano = year(COMPETEN), .after = COMPETEN) |> 
+  group_by(ano, COMPETEN, CODUFMUN) |> 
+  count() |> 
+  ungroup() |> 
+  select(-n)
+
+
+```
+
+## Todos os médicos da unidade
+
+```{r}
+
+df_profs <- 
+  df |> 
+  mutate(ano = year(COMPETEN), 
+         .after = COMPETEN) |>
+  mutate(mes = month(COMPETEN)) |> 
+  filter(uf_sigla == "AM") |> 
+  group_by(ano, COMPETEN, 
+           CODUFMUN, NOMEPROF) |> 
+  count() |> 
+  ungroup() |> 
+  select(-n) 
+
+```
+
+Representação dos municípios
+
+```{r}
+#| warning: false
+
+munic <- read_municipality(year = 2020)  
+munic$code_muni <- as.character(munic$code_muni)
+munic$code_muni <- substr(munic$code_muni, 1, 6)
+
+municipios_am <- munic |> filter(abbrev_state == "AM") |> 
+  mutate(
+    lon = st_coordinates(st_centroid(geom))[, 1],
+    lat = st_coordinates(st_centroid(geom))[, 2]
+  )
+
+careiro <- municipios_am  |> 
+  filter(name_muni == "Careiro Da Várzea")  |> 
+  mutate(
+    lon = st_coordinates(st_centroid(geom))[, 1],  
+    lat = st_coordinates(st_centroid(geom))[, 2]  
+  )  |> 
+  select(name_muni, lon, lat)
+
+
+df_mapa <- df_profs |> 
+  left_join(municipios_am, 
+            by = c("CODUFMUN"="code_muni")) |> 
+  ungroup()
+
+municipios_destacados <- municipios_am |> 
+                            filter(code_muni %in% 
+                                     unique(df$CODUFMUN)) |> 
+                            select(code_muni,
+                                   name_muni,
+                                   lat, lon)
+
+bbox <- municipios_destacados %>%
+  st_bbox()
+
+```
+
+Função
+
+```{r}
+
+a <- ggplot(df_mapa) +
+  geom_sf(data = municipios_am, 
+          fill = "gray90", 
+          color = "white", 
+          alpha = 0.5) +
+  geom_sf(aes(geometry = geom, 
+              fill = NOMEPROF), 
+          color = "black", 
+          size = 0.3) +
+  geom_text_repel(data = municipios_destacados, 
+    aes(
+      x = lon, 
+      y = lat, 
+      label = name_muni), 
+    size = 3, fill = "white", color = "black", alpha = 0.8) +
+  facet_wrap(~NOMEPROF) +
+  theme_minimal() +
+  labs(
+    title = "Ano: {closest_state}",
+    fill = "Profissional",
+    x = NULL,
+    y = NULL
+  ) +
+  scale_fill_viridis_d(option = "C") +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    plot.title = element_text(hjust = 0.5, size = 14)
+  ) +
+  transition_states(COMPETEN, 
+                    transition_length = 2, 
+                    state_length = 1) +
+  coord_sf(
+    xlim = c(bbox["xmin"] - 0.5, bbox["xmax"] + 0.5), 
+    ylim = c(bbox["ymin"] - 0.5, bbox["ymax"] + 0.5),  
+    expand = FALSE
+  )
+
+
+```
+
+asdf
+
+```{r}
+
+animate(
+  a,
+  renderer = ffmpeg_renderer("animacao_am.mp4"),
+  width = 800,
+  height = 600,
+  duration = 20,
+  fps = 1
+)
+
+
+animate(
+  a,
+  renderer = gifski_renderer("animacao_municipios_am.gif"),
+  width = 1000,
+  height = 800,
+  duration = 20,
+  fps = 1
+)
+
+```
