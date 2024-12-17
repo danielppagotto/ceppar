@@ -1,3 +1,5 @@
+-- Relação de médicos da Atenção Primária à Saúde em Borba durante os anos e meses
+
 SELECT DISTINCT
     SUBSTR(a.COMPETEN, 1, 4) AS ano, -- Data (ex: 202401) = janeiro de 2024
     SUBSTR(a.COMPETEN, 5, 2) AS mes, -- Data (ex: 202401) = janeiro de 2024
@@ -15,8 +17,8 @@ SELECT DISTINCT
     a.TP_UNID, -- Tipo de unidade de saúde
     CASE
         WHEN 
-            substr(a.CBO, 1, 3) = '225' OR 
-            a.CBO = '2231F9'
+            a.CBO LIKE '225%' OR  
+            a.CBO LIKE '2231%'
         THEN 'Médico' -- Código CBO de médicos
         ELSE CBO
     END CATEGORIA, -- Profissão
@@ -34,7 +36,7 @@ WHERE
     a.CODUFMUN = '130080' AND -- Código IBGE de Borba
     a.TP_UNID IN ('01', '02', '32', '40', '71', '72', '74') AND -- Código das unidades de atenção primária em saúde 
     (CBO LIKE '225%' OR 
-    CBO = '2231F9'
+    CBO LIKE '2231%'
     ) -- Código CBO de médicos
 ORDER BY
     a.CNES ASC;
