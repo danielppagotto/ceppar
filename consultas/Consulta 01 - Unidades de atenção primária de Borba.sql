@@ -1,3 +1,5 @@
+-- Consulta da quantidade de estabelecimentos de Atenção Primária à Saúde em Borba em 2024
+
 SELECT DISTINCT
     a.CNES,
     b.FANTASIA
